@@ -17,6 +17,7 @@ python script.py -t $TOKEN -r $REFRESH -u 'https://seatsurfing.dundermifflin.com
   + Open the website;
   + Open the inspect tools;
   + Listen for transactions (For Firefox, Network tab);
+  + Log in
   + Retrieve the content of '/auth/verify/<id>' request.
 
 ** Warning

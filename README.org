@@ -1,0 +1,48 @@
+#+title: Seatsurfing Booking
+
+This script is helping to ensure having a permanent desk in a location where all
+desks are bookable. It is intended to be run in background indefinitely having
+previously collected the two required tokens from the browser.
+
+
+** Example
+#+begin_src shell
+python script.py -t $TOKEN -r $REFRESH -u 'https://seatsurfing.dundermifflin.com' -l 'The Office, 1st Floor' -s 'Michael Desk'
+#+end_src
+
+** Tokens
+- JWT Token is the token used for authentication.
+- Refresh token is used to refresh the JWT token before expiration.
+- These 2 tokens can be retrieved via browser console.
+  + Open the website;
+  + Open the inspect tools;
+  + Listen for transactions (For Firefox, Network tab);
+  + Retrieve the content of '/auth/verify/<id>' request.
+
+** Warning
+- This particual token mechanism might be only working with Gitlab OAUTH.
+- It may be possible that the JWT token is not indefinitely refreshable via API.
+
+** Usage
+
+#+begin_src
+usage: script.py [-h] -u url -l name -s name -t token -r token [-d days] [-i seconds] [-v]
+
+Register seatsurfing space inside a location for consecutive days.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -u url, --url url     Seatsurfing URL
+  -l name, --location-name name
+                        Location containing spaces
+  -s name, --space-name name
+                        Space to register
+  -t token, --token token
+                        JWT to be used for authentication (to retrieve via browser console)
+  -r token, --refresh-token token
+                        Token used to refresh JTW (to retrieve via browser console)
+  -d days, --days days  following days to register (default 7 days)
+  -i seconds, --interval seconds
+                        interval in seconds between checks (default 3m, must be <5m to avoid losing token)
+  -v, --verbose         print debug
+#+end_src

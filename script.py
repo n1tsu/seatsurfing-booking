@@ -3,9 +3,13 @@ import json
 import requests
 import time
 import urllib3
+import os
+import re
+import html
 
 from typing import Optional
 from datetime import datetime, timedelta
+from auth import authentication_gitlab
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -139,7 +143,7 @@ def refresh_auth() -> (str, str):
     """Refresh JWT using the refresh token.
     The output is the new JWT and the new refresh token.
     """
-    print(f'Refreshing token')
+    print('Refreshing token')
     refresh_payload = f'"refreshToken":"{ARGS.refresh_token}"'
     response = requests.post(
         ARGS.url + ENDPOINT_REFRESH,
@@ -156,10 +160,61 @@ def refresh_auth() -> (str, str):
     response_json = response.json()
     access_token = response_json['accessToken']
     refresh_token = response_json['refreshToken']
-    print('New access token: ' + bcolors.OKCYAN + f'{access_token}' + bcolors.ENDC)
-    print('New refresh token: ' + bcolors.OKCYAN + f'{refresh_token}' + bcolors.ENDC)
+    if ARGS.verbose:
+        print('New access token: ' + bcolors.OKCYAN + f'{access_token}' + bcolors.ENDC)
+        print('New refresh token: ' + bcolors.OKCYAN + f'{refresh_token}' + bcolors.ENDC)
 
     return access_token, refresh_token
+
+
+def retrieve_oauth_id() -> str:
+    """Retrieve auth provider id via API.
+    """
+    print('Retrieving oauth id')
+    endpoint_singleorg = '/auth/singleorg'
+    response = requests.get(
+        ARGS.url + endpoint_singleorg,
+        proxies=PROXIES,
+        verify=False
+    )
+    if response.status_code != 200 or ARGS.verbose:
+        debug_response(response)
+        if response.status_code != 200:
+            exit(1)
+
+    response_json = response.json()
+    # XXX Assuming that the required provider is the first one
+    oauth_id = response_json["authProviders"][0]["id"]
+    oauth_name = response_json["authProviders"][0]["name"]
+    print('oauth provider is ' + bcolors.OKCYAN + f'{oauth_name} - {oauth_id}' + bcolors.ENDC)
+    return oauth_id
+
+
+def generate_auth_link(oauth_id: str) -> str:
+    """Retrieve gitlab auth link via API.
+    """
+    print('Generating authentication link')
+    endpoint_auth = f'/auth/{oauth_id}/login/ui'
+    response = requests.get(
+        ARGS.url + endpoint_auth,
+        allow_redirects=False,
+        proxies=PROXIES,
+        verify=False
+    )
+    if response.status_code != 307 or ARGS.verbose:
+        debug_response(response)
+        if response.status_code != 307:
+            exit(1)
+
+    # Parse response
+    if ARGS.verbose:
+        print(response.text)
+    match = re.search('<a href="(.+)">.+', response.text)
+    if match is None:
+        print('Failed to parse authentication link')
+        exit(1)
+
+    return match.group(1)
 
 
 def main_loop():
@@ -190,20 +245,44 @@ def main_loop():
         time.sleep(ARGS.interval)
 
 
-def init_parser():
+def init_args():
+    """Parse command line arguments and retrieve environment variables.
+    """
     global ARGS
     parser = argparse.ArgumentParser(description='Register seatsurfing space inside a location for consecutive days.')
-    parser.add_argument('-u', '--url', metavar='url', required=True, help='Seatsurfing URL')
-    parser.add_argument('-l', '--location-name', metavar='name', dest='location_name', required=True, help='Location containing spaces')
-    parser.add_argument('-s', '--space-name', metavar='name', dest='space_name', required=True, help='Space to register')
-    parser.add_argument('-t', '--token', metavar='token', dest='token', required=True, help='JWT to be used for authentication (to retrieve via browser console)')
-    parser.add_argument('-r', '--refresh-token', metavar='token', required=True, dest='refresh_token', help='Token used to refresh JTW (to retrieve via browser console)')
-    parser.add_argument('-d', '--days', metavar='days', type=int, default=7, help='following days to register (default 7 days)')
-    parser.add_argument('-i', '--interval', metavar='seconds', type=int, default=3 * 60, help='interval in seconds between checks (default 3m, must be <5m to avoid losing token)')
+    parser.add_argument('-u', metavar='url', required=True, help='seatsurfing URL')
+    parser.add_argument('-l', metavar='name', dest='location_name', required=True, help='location containing spaces')
+    parser.add_argument('-s', metavar='name', dest='space_name', required=True, help='space to register')
+    # parser.add_argument('-t', '--token', metavar='token', dest='token', required=True, help='JWT to be used for authentication (to retrieve via browser console)')
+    # parser.add_argument('-r', '--refresh-token', metavar='token', required=True, dest='refresh_token', help='Token used to refresh JTW (to retrieve via browser console)')
+    parser.add_argument('-o', metavar='id', dest='oauth_id', help='oauth ID if website is hosting multiple org')
+    parser.add_argument('-d', metavar='days', type=int, default=7, help='following days to register (default 7 days)')
+    parser.add_argument('-i', metavar='seconds', type=int, default=3 * 60, help='interval in seconds between checks (default 3m, must be <5m to avoid losing token)')
     parser.add_argument('-v', '--verbose', action='store_true', help='print debug')
     ARGS = parser.parse_args()
 
+    try:
+        ARGS.user = os.environ['GITLAB_USER']
+        ARGS.password = os.environ['GITLAB_PASSWORD']
+        ARGS.secret = os.environ['GITLAB_OTP_SECRET']
+    except KeyError as e:
+        print(f'Secrets from environment not found: {e}')
+        exit(1)
+
 
 if __name__ == '__main__':
-    init_parser()
+    init_args()
+    if ARGS.oauth_id is None:
+        ARGS.oauth_id = retrieve_oauth_id()
+
+    link = generate_auth_link(ARGS.oauth_id)
+    token, refresh = authentication_gitlab(
+        ARGS.user, ARGS.password, ARGS.secret, html.unescape(link)
+    )
+    ARGS.token = token
+    ARGS.refresh_token = refresh
+    if ARGS.verbose:
+        print('Access token: ' + bcolors.OKCYAN + f'{token}' + bcolors.ENDC)
+        print('Refresh token: ' + bcolors.OKCYAN + f'{refresh}' + bcolors.ENDC)
+
     main_loop()

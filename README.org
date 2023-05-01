@@ -1,9 +1,6 @@
 #+title: Seatsurfing Booking
 
-This script is helping to ensure having a permanent desk in a location where all
-desks are bookable. It is intended to be run in background indefinitely having
-previously collected the two required tokens from the browser.
-
+Book a seat for the *n* following days on seatsurfing.
 
 ** Example
 #+begin_src shell
@@ -11,18 +8,12 @@ GITLAB_USER=...
 GITLAB_PASSWORD=...
 GITLAB_OTP_SECRET=...
 
-python script.py -u 'https://seatsurfing.dundermifflin.com' -l 'The Office, 1st Floor' -s 'Michael Desk'
+python booking.py -u 'https://seatsurfing.dundermifflin.com' -l 'The Office, 1st Floor' -s 'Michael Desk' -v
 #+end_src
 
-** Limitations
-- Only works with Gitlab 2FA oauth (but easy to customize).
-- The session token is refreshed every scan, but maybe server prevents it after
-  a long time being alive.
-
 ** Usage
-
-#+begin_src
-usage: script.py [-h] -u url -l name -s name [-o id] [-d days] [-i seconds] [-v]
+#+begin_src shell
+usage: booking.py [-h] -u url -l name -s name [-o id] [-d days] [-v]
 
 Register seatsurfing space inside a location for consecutive days.
 
@@ -33,6 +24,40 @@ optional arguments:
   -s name        space to register
   -o id          oauth ID if website is hosting multiple org
   -d days        following days to register (default 7 days)
-  -i seconds     interval in seconds between checks (default 3m, must be <5m to avoid losing token)
-  -v, --verbose  print debug
+  -v, --verbose  increase the verbosity level
 #+end_src
+
+** Cron script to execute every day
+- Clone repository and setup venv
+#+begin_src shell
+git clone ... /home/user/.local/bin/seatsurfing-booking
+cd /home/user/.local/bin/seatsurfing-booking
+python -m venv .venv; source .venv/bin/activate; pip install -r requirements.txt
+vim /home/user/.local/bin/seatsurfing-booking/booking.sh
+#+end_src
+
+- Create a bash script sourcing, setting environment variables, and running the python
+#+begin_src shell
+#/bin/bash
+source /home/user/local/bin/seatsurfing-booking/.venv/bin/activate
+
+GITLAB_USER=...
+GITLAB_PASSWORD=...
+GITLAB_OTP_SECRET=...
+export HTTP_PROXY=''
+export HTTPS_PROXY=''
+export http_proxy=''
+export https_proxy=''
+
+date
+python booking.py -u 'https://seatsurfing.dundermifflin.com' -l 'The Office, 1st Floor' -s 'Michael Desk'
+#+end_src
+- chmod +x the bash script
+
+#+begin_src shell
+crontab -e
+0 10 * * * /home/user/.local/bin/seatsurfing-booking/booking.sh >> /home/user/booking.log 2>&1
+#+end_src
+
+** Limitations
+- Only works with Gitlab 2FA oauth (but easy to add other authentication).
